@@ -4,362 +4,306 @@
 #include<iostream>
 #include<algorithm>
 #include<vector>
+#include<string>
+#include<math.h>
 
 using namespace std;
 
-FILE *input;
-FILE *output;
+FILE *train;
+FILE *test;
+FILE *atest;
 
-int min_sup; // min_sup
-int min_sup_num; // (min_sup / 100) * size of transacrions
+/*
+	attribute & labels
+*/
 
-vector<vector<int>> transaction;
 
-typedef struct _tid_List{
-	int data;
-	vector<int> list;
-}tid_list; // list of tid which include specific data
+typedef struct _label{
+	string label;
+	int lid;
+}tlabel;
 
-vector<tid_list> vertical_type;
+typedef struct _attribute{
+	string attr;
+	vector<tlabel> labels; // attribute's label list
+}tattribute;
 
-int mapDataToVID[100000]; // mapping data to vertical type idx
+vector<tattribute> attributes; // attributes list
 
-vector<vector<vector<int>>> L;
-vector<vector<vector<int>>> C;
+/*
+	Node
+*/
 
-vector<vector<int>> freq_Itemsets;
-vector<pair<vector<int>, vector<int>>> rules;
+typedef struct _tNode{
+	string label; // selected label;
+	string attr; // attribute or class label
+	int flag; // class label/attribute flag. 1 : class label, 0 : attribute
+	vector<struct _tNode> list; // edge list
+}tNode; 
 
-void init(){
-	int i, j;
+tNode root;
 
-	for (i = 0; i < 100000; i++){
-		mapDataToVID[i] = -1;
-	}
-}
+vector<vector<int>> tid_lists; // list of tid_list
+string Class;
+tattribute attr_Class;
 
-void printTransaction(){
-	int i, j;
-	for (i = 0; i < transaction.size(); i++){
-		for (j = 0; j < transaction[i].size(); j++){
-			printf("%d ", transaction[i][j]);
-		}
-		printf("\n");
-	}
-	printf("transaction count is %d\n", transaction.size());
-}
-
-void printVertical(){
-	int i, j;
-
-	printf("print Vertical type\n");
-
-	for (i = 0; i < vertical_type.size(); i++){
-		printf("%d : {", vertical_type[i].data);
-		for (j = 0; j < vertical_type[i].list.size(); j++){
-			printf("%d ", vertical_type[i].list[j]);
-		}
-		printf("}\n");
-	}
-	printf("vertical type count is %d\n", vertical_type.size());
-}
-
-// generate C1 and L1
-void generateL1(){
+int findLabel(tattribute attr, string label){
 	int i;
-	printf("generateL1\n");
-	vector<vector<int>> L1;
-	vector<vector<int>> C1;
-
-	for (i = 0; i < vertical_type.size(); i++){
-		vector<int> temp;
-		temp.push_back(vertical_type[i].data);
-		C1.push_back(temp);
-		if (vertical_type[i].list.size() >= min_sup_num)
-			L1.push_back(temp);
+	for (i = 0; i < attr.labels.size(); i++){
+		if (label == attr.labels[i].label)
+			return attr.labels[i].lid;
 	}
-	sort(C1.begin(), C1.end());
-	C.push_back(C1);
-
-	sort(L1.begin(), L1.end());
-	L.push_back(L1);
-
+	return -1;
 }
 
-void printL(int k){
-	int i, j;
-	printf("printL%d\n", k);
-	for (i = 0; i < L[k - 1].size(); i++){
-		for (j = 0; j < L[k - 1][i].size(); j++){
-			printf("%d ", L[k - 1][i][j]);
-		}
-		printf("\n");
-	}
-}
-
-void printC(int k){
-	int i, j;
-	printf("printC%d\n", k);
-	for (i = 0; i < C[k - 1].size(); i++){
-		for (j = 0; j < C[k - 1][i].size(); j++){
-			printf("%d ", C[k - 1][i][j]);
-		}
-		printf("\n");
-	}
-}
-
-bool isExist(vector<vector<int>> list, vector<int> target){
-	int i, j;
-	for (i = 0; i < list.size(); i++){
-		int flag = 1;
-		for (j = 0; j < target.size(); j++){
-			if (list[i][j] != target[j]){
-				flag = 0;
-				break;
-			}
-		}
-		if (flag == 1)
-			return true;
-	}
-	return false;
-}
-
-void printVector(vector<int> temp){
+int findAttr(string attr){
 	int i;
-	printf("%d : ", temp.size());
-	for (i = 0; i<temp.size(); i++){
-		printf("%d ", temp[i]);
+	for (i = 0; i < attributes.size(); i++){
+		if (attr == attributes[i].attr)
+			return i;
 	}
+	return -1;
 }
 
-// self-joining Lk and make Ck+1 candidates
-vector<vector<int>> join(int k){
-	printf("self-joining L%d\n", k);
-	int i, j;
-	int ida = 0, idb = 0;
-	vector<vector<int>> temp_c_list;
-	for (i = 0; i < L[k - 1].size(); i++){
-		for (j = i + 1; j < L[k - 1].size(); j++){
-			if (k>1 && L[k - 1][i][k - 2] != L[k - 1][j][k - 2])
-				break;
-			vector<int> temp_c;
-			int idx = 0;
-
-			while (idx<k - 1){
-				temp_c.push_back(L[k - 1][i][idx]);
-				idx++;
-			}
-			temp_c.push_back(L[k - 1][i][idx]);
-			temp_c.push_back(L[k - 1][j][idx]);
-
-			temp_c_list.push_back(temp_c);
-		}
-	}
-	return temp_c_list;
-}
-
-// pruning Ck candidates
-bool pruning(int k, vector<vector<int>> temp_c_list){
-	printf("pruning C%d\n", k);
-
-	if (temp_c_list.size() == 0)
-		return false;
-
-	int C_id, i, L_id;
-	vector<vector<int>> pruned_c_list;
-
-	for (C_id = 0; C_id < temp_c_list.size(); C_id++){
-		int flag = 1;
-		for (i = 0; i < k - 1; i++){
-			vector<int> temp = temp_c_list[C_id];
-			temp.erase(temp.begin() + i);
-			for (L_id = 0; L_id < L[k - 2].size(); L_id++){
-				if (L[k - 2][L_id][0] != temp[0])
-					continue;
-
-				else{
-					if (k>2 && L[k - 2][L_id][1] != temp[1])
-						continue;
-				}
-
-				if (equal(temp.begin(), temp.end(), L[k - 2][L_id].begin())){
-					break;
-				}
-			}
-			if (L_id == L[k - 2].size()){
-				flag = 0;
-				break;
-			}
-		}
-		if (flag == 1){
-			pruned_c_list.push_back(temp_c_list[C_id]);
-		}
-	}
-
-	if (pruned_c_list.size() > 0){
-		C.push_back(pruned_c_list);
-		return true;
-	}
-	else
-		return false;
-}
-
-// generate Ck by joining and pruning
-bool apriori_gen(int k){
-	return pruning(k, join(k - 1));
-}
-
-// calculate itemset's support
-int findSupport(vector<int> data_set){
+void printAttributes(){
 	int i;
+	for (i = 0; i < attributes.size(); i++){
+		cout << attributes[i].attr;
+		cout << " ";
+	}
+	cout << endl;
+}
 
-	vector<int> result = vertical_type[mapDataToVID[data_set[0]]].list;
-
-	for (i = 1; i < data_set.size(); i++){
-		vector<int> temp(transaction.size());
+void printTidLists(){
+	int i,j,k;
+	for (i = 0; i < attributes.size(); i++){
+		cout << attributes[i].attr << endl;
+		for (j = 0; j < attributes[i].labels.size(); j++){
+			int tlid = attributes[i].labels[j].lid;
+			cout << "(" << attributes[i].labels[j].label<<") : ";
+			for (k = 0; k < tid_lists[tlid].size();k++)
+				printf("%d ", tid_lists[tlid][k]);
+			cout << endl;
+		}
+		cout << endl;
+	}
+}
+double calculated(vector<int> range, tattribute target){
+	int i,j;
+	double infoAD = 0;
+	for (j = 0; j < target.labels.size(); j++){
+		double weight;
 		vector<int>::iterator it;
-		vector<int> target = vertical_type[mapDataToVID[data_set[i]]].list;
+		vector<int> target_tid_list = tid_lists[target.labels[j].lid];
+		vector<int> temp(range.size());
 
-		it = set_intersection(result.begin(), result.end(), target.begin(),
-			target.end(), temp.begin());
+		it = set_intersection(range.begin(), range.end(), target_tid_list.begin(), target_tid_list.end(),temp.begin());
 		temp.resize(it - temp.begin());
 
-		result.clear();
+		weight = (double)temp.size() / range.size();
+		double infoDj = 0;
+		if (weight){
 
-		for (it = temp.begin(); it != temp.end(); ++it){
-			result.push_back(*it);
-		}
-	}
+			for (i = 0; i < attr_Class.labels.size(); i++){
+				double weight2;
+				vector<int>::iterator it2;
+				vector<int> class_tid_list = tid_lists[attr_Class.labels[i].lid];
+				vector<int> temp2(temp.size());
 
-	return result.size();
-}
-
-void print_subset(vector<int> subset){
-	int i = 0;
-	fprintf(output, "{%d", subset[i]);
-	for (i = 1; i < subset.size(); i++)
-		fprintf(output, ",%d", subset[i]);
-	fprintf(output, "}");
-}
-
-// find all subset by recursion
-void find_subset(int k, int l, vector<int> pre, vector<int> total, int sup_total){
-	int ti;
-	if (pre.size() < k){
-		for (ti = l + 1; ti < total.size(); ti++){
-			pre.push_back(total[ti]);
-			find_subset(k, ti, pre, total, sup_total);
-			pre.pop_back();
-		}
-	}
-	else{
-		int sup_pre = findSupport(pre);
-
-		print_subset(pre);
-		fprintf(output, "\t");
-
-		vector<int> aft = total;
-		int pi;
-		for (pi = 0; pi < pre.size(); pi++){
-			vector<int>::iterator it = find(aft.begin(), aft.end(), pre[pi]);
-			int pos = distance(aft.begin(), it);
-			aft.erase(aft.begin() + pos);
-		}
-		print_subset(aft);
-		fprintf(output, "\t");
-		fprintf(output, "%.2lf\t%.2lf\n",
-			(double)(sup_total * 100) / (double)transaction.size(),
-			(double)sup_total * 100 / (double)sup_pre);
-		return;
-	}
-}
-
-
-// calculate Ck's support and filtering Ck which doesn't satisfy min_sup
-void scanning(int k){
-	printf("scanning C%d\n", k);
-	int i;
-
-	vector<vector<int>> temp_L_list;
-
-	for (i = 0; i < C[k - 1].size(); i++){
-		int cnt = findSupport(C[k - 1][i]);
-
-		if (cnt >= min_sup_num){
-			temp_L_list.push_back(C[k - 1][i]);
-			int j;
-			for (j = 1; j < C[k - 1][i].size(); j++){
-				vector<int> pre;
-				find_subset(j, -1, pre, C[k - 1][i], cnt);
+				it2 = set_intersection(temp.begin(), temp.end(), class_tid_list.begin(), class_tid_list.end(), temp2.begin());
+				temp2.resize(it2 - temp2.begin());
+				weight2 = (double)temp2.size() / temp.size();
+				if (weight2)
+					infoDj += (-1)*weight2*log2(weight2);
 			}
 		}
+		infoAD += weight*infoDj;
 	}
-	L.push_back(temp_L_list);
+	cout << target.attr << "'s infoAD : " << infoAD << endl;
+	
+	return infoAD;
+}
+void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent){
+	// calculate information gain about attributes which doesn't selected
+	int i;
+	double min = 100;
+	string min_attr;
+
+	int max = 0;
+	int max_lid;
+	for (i = 0; i < attr_Class.labels.size(); i++){
+		vector<int>::iterator it;
+		vector<int> class_tid_list = tid_lists[attr_Class.labels[i].lid];
+		vector<int> temp(range.size());
+
+		it = set_intersection(range.begin(), range.end(), class_tid_list.begin(), class_tid_list.end(), temp.begin());
+		temp.resize(it - temp.begin());
+		if (max < temp.size()){
+			max = temp.size();
+			max_lid = i;
+		}
+	}
+
+	if (max == range.size()||remained.size() == 0){
+		parent->flag = 1;
+		parent->attr = attr_Class.labels[max_lid].label;
+		cout << "**** labeled to " << parent->attr << endl << endl;
+		return;
+	}
+
+	parent->flag = 0;
+
+	for (i = 0; i < remained.size();i++){
+		// calculated gain and find max
+		tattribute target = attributes[findAttr(remained[i])];
+		double temp_gain = calculated(range, target);
+		if (min > temp_gain){
+			min = temp_gain;
+			min_attr = target.attr;
+		}
+	}
+	parent->attr = min_attr;
+
+	remained.erase(remove(remained.begin(), remained.end(), min_attr), remained.end());
+	int aid = findAttr(min_attr);
+	for (i = 0; i < attributes[aid].labels.size();i++){
+		
+		// intersection range & select the label;
+		vector<int>::iterator it;
+		vector<int> selected_tid_list = tid_lists[attributes[aid].labels[i].lid];
+		vector<int> temp_range(range.size());
+		it = set_intersection(range.begin(), range.end(), selected_tid_list.begin(), selected_tid_list.end(), temp_range.begin());
+		temp_range.resize(it - temp_range.begin());
+
+		if (temp_range.size()>0){
+			tNode temp_child;
+			temp_child.label = attributes[aid].labels[i].label;
+			parent->list.push_back(temp_child);
+
+			cout << endl << attributes[aid].attr << "(" << temp_child.label << ") pruning..." << endl;
+			makeDecisionTree(temp_range, remained, &parent->list[parent->list.size()-1]);
+		}
+	}
 }
 
+
+
 int main(int argc, char* argv[]){
-	int num;
-	char c;
-	int temp;
 	char str[100];
 	char *token;
 
-	if (argc < 4){
+	if (argc < 3){
 		printf("check input!\n");
 		return 0;
 	}
 
-	input = fopen(argv[2], "r");
-	output = fopen(argv[3], "w");
+	train = fopen(argv[1], "r");
+	test = fopen(argv[2], "r+");
 
-	init();
+	// tuple
+	int sflag = 0; // start flag
+	int tid = -1;
 
-	// parsing to transaction array
-	while (!feof(input)){
-		if (fgets(str, sizeof(str), input)){
-			token = strtok(str, "\t");
-			int i;
-			vector<int> transaction_temp;
-			for (i = 0; token != NULL; i++){
-				temp = atoi(token);
-				transaction_temp.push_back(temp);
+	vector<string> remained; // doesn't selected attributes
+	vector<int> range; // splited range by selected attributes 
 
-				if (mapDataToVID[temp] == -1){
-					tid_list temp_list;
-					temp_list.data = temp;
+	// parsing tuples
+	while (!feof(train)){
+		if (fgets(str, sizeof(str), train)){
 
-					vertical_type.push_back(temp_list);
-					mapDataToVID[temp] = vertical_type.size() - 1;
+			if (sflag == 0){
+				// parsing attributes
+				sflag = 1;
+
+				token = strtok(str, "\t");
+				
+				int i;
+
+				for (i = 0; token != NULL; i++){
+					string temp = token;
+					
+					if (temp.substr(0, 6) == "Class:"){
+						token = strtok(token, "\n");
+						temp = token;
+						Class = temp.substr(6, temp.size());
+						tattribute tattr;
+						tattr.attr = Class;
+						attributes.push_back(tattr);
+					}
+					else{
+						tattribute tattr;
+						tattr.attr = temp;
+						attributes.push_back(tattr);
+						remained.push_back(temp);
+					}
+					token = strtok(NULL, "\t");
+				}
+				printAttributes();
+			}
+			else{
+				// parsing tuple
+				token = strtok(str, "\t");
+				int i;
+
+				for (i = 0; token != NULL; i++){
+					if (i == attributes.size()-1)
+						token = strtok(token, "\n");
+					string label = token;
+					int temp_lid = findLabel(attributes[i], label);
+					if (temp_lid<0){
+						// new Label
+						tlabel temp_label;
+						temp_label.label = label;
+						temp_label.lid = tid_lists.size();
+						temp_lid = temp_label.lid;
+
+						attributes[i].labels.push_back(temp_label);
+						
+						vector<int> temp_tid_list;
+						tid_lists.push_back(temp_tid_list);
+					}
+					tid_lists[temp_lid].push_back(tid);
+					token = strtok(NULL, "\t");
+				}
+			}
+			range.push_back(tid);
+			tid++;
+		}
+	}
+
+	attr_Class = attributes[attributes.size() - 1];
+
+	printTidLists();
+
+	// make Decision Tree by information gain
+	makeDecisionTree(range, remained,&root);
+	/*
+	// labeling
+	sflag = 0;
+	while (!feof(test)){
+		if (fgets(str, sizeof(str), test)){
+
+			if (sflag == 0){
+				// parsing attributes
+				sflag = 1;
+				fputs(Class.c_str(),atest);
+			}
+			else{
+				// parsing tuple
+				token = strtok(str, "\t");
+				int i;
+				vector<string> tuple;
+
+				for (i = 0; token != NULL; i++){
+					string label = token;
+					tuple.push_back(label);
+					token = strtok(NULL, "\t");
 				}
 
-				vertical_type[mapDataToVID[temp]].list.push_back(transaction.size());
 
-				token = strtok(NULL, "\t");
 			}
-			sort(transaction_temp.begin(), transaction_temp.end());
-			transaction.push_back(transaction_temp);
 		}
 	}
-
-	min_sup = atoi(argv[1]);
-	min_sup_num = min_sup * transaction.size() / 100;
-
-	// convert min_sup ratio to # of transaction 
-	printf("min_sup_num is %d\n", min_sup_num);
-
-	// generate C1 and L1
-	generateL1();
-
-	int k;
-	// generate frequent itemsets
-	for (k = 2; k < vertical_type.size(); k++){
-		if (apriori_gen(k)){
-			scanning(k);
-		}
-		else
-			break;
-	}
-
-	fclose(output);
+	*/
 	return 0;
 }
