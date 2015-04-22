@@ -11,7 +11,7 @@ using namespace std;
 
 FILE *train;
 FILE *test;
-FILE *atest;
+FILE *updated;
 
 /*
 	attribute & labels
@@ -46,6 +46,8 @@ tNode root;
 vector<vector<int>> tid_lists; // list of tid_list
 string Class;
 tattribute attr_Class;
+
+vector<string> results; // result string list
 
 int findLabel(tattribute attr, string label){
 	int i;
@@ -88,6 +90,11 @@ void printTidLists(){
 		cout << endl;
 	}
 }
+
+double log2(double x){
+	return log(x) / log(2.);
+}
+
 double calculated(vector<int> range, tattribute target){
 	int i,j;
 	double infoAD = 0;
@@ -182,11 +189,36 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 
 			cout << endl << attributes[aid].attr << "(" << temp_child.label << ") pruning..." << endl;
 			makeDecisionTree(temp_range, remained, &parent->list[parent->list.size()-1]);
+		}else{
+			tNode temp_child;
+			temp_child.label = attributes[aid].labels[i].label;
+			temp_child.flag = 1;
+			temp_child.attr = attr_Class.labels[max_lid].label;
+			parent->list.push_back(temp_child);
+
+			cout << endl << attributes[aid].attr << "(" << temp_child.label << ") doesn't have range..." << endl;
+			cout << "**** labeled to " << temp_child.attr << endl << endl;
 		}
 	}
 }
 
-
+string Labeling(vector<string> tuple){
+	tNode *point = &root;
+	while(!point->flag){
+		int i;
+		for(i=0;i<point->list.size();i++){
+			int aid = findAttr(point->attr);
+			cout<<point->attr << " : " << point->list[i].label << " " << tuple[aid] << endl;
+			if(point->list[i].label == tuple[aid]){
+				point = &point->list[i];
+				break;
+			}
+		}
+	}
+	string label = point->attr;
+	cout<< "**** labeled to " << label << endl; 
+	return label;
+}
 
 int main(int argc, char* argv[]){
 	char str[100];
@@ -198,7 +230,7 @@ int main(int argc, char* argv[]){
 	}
 
 	train = fopen(argv[1], "r");
-	test = fopen(argv[2], "r+");
+	test = fopen(argv[2], "r");
 
 	// tuple
 	int sflag = 0; // start flag
@@ -273,20 +305,23 @@ int main(int argc, char* argv[]){
 
 	attr_Class = attributes[attributes.size() - 1];
 
-	printTidLists();
+//	printTidLists();
 
 	// make Decision Tree by information gain
 	makeDecisionTree(range, remained,&root);
-	/*
+	
 	// labeling
 	sflag = 0;
 	while (!feof(test)){
 		if (fgets(str, sizeof(str), test)){
-
+			string temp_str = str;
+			
 			if (sflag == 0){
 				// parsing attributes
 				sflag = 1;
-				fputs(Class.c_str(),atest);
+				temp_str.insert(temp_str.size()-1,"\t" + Class);
+				cout<<temp_str<<endl;
+				results.push_back(temp_str);
 			}
 			else{
 				// parsing tuple
@@ -295,15 +330,27 @@ int main(int argc, char* argv[]){
 				vector<string> tuple;
 
 				for (i = 0; token != NULL; i++){
+					if(i==attributes.size()-2)
+						token = strtok(token, "\n");
 					string label = token;
+	
 					tuple.push_back(label);
 					token = strtok(NULL, "\t");
 				}
 
+				string labeled = Labeling(tuple);
+				temp_str.insert(temp_str.size()-1,"\t" + labeled);
+				cout<<temp_str<<endl;
+				results.push_back(temp_str);
 
 			}
 		}
 	}
-	*/
+	int rid;
+	updated = fopen(argv[2], "w");
+
+	for(rid=0;rid<results.size();rid++)
+		fprintf(updated,results[rid].c_str());
+	
 	return 0;
 }
