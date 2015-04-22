@@ -17,7 +17,6 @@ FILE *updated;
 	attribute & labels
 */
 
-
 typedef struct _label{
 	string label;
 	int lid;
@@ -94,7 +93,7 @@ void printTidLists(){
 double log2(double x){
 	return log(x) / log(2.);
 }
-
+// calculate information gain
 double calculated(vector<int> range, tattribute target){
 	int i,j;
 	double infoAD = 0;
@@ -104,7 +103,8 @@ double calculated(vector<int> range, tattribute target){
 		vector<int> target_tid_list = tid_lists[target.labels[j].lid];
 		vector<int> temp(range.size());
 
-		it = set_intersection(range.begin(), range.end(), target_tid_list.begin(), target_tid_list.end(),temp.begin());
+		it = set_intersection(range.begin(), range.end(), 
+			target_tid_list.begin(), target_tid_list.end(),temp.begin());
 		temp.resize(it - temp.begin());
 
 		weight = (double)temp.size() / range.size();
@@ -117,7 +117,8 @@ double calculated(vector<int> range, tattribute target){
 				vector<int> class_tid_list = tid_lists[attr_Class.labels[i].lid];
 				vector<int> temp2(temp.size());
 
-				it2 = set_intersection(temp.begin(), temp.end(), class_tid_list.begin(), class_tid_list.end(), temp2.begin());
+				it2 = set_intersection(temp.begin(), temp.end(), 
+					class_tid_list.begin(), class_tid_list.end(), temp2.begin());
 				temp2.resize(it2 - temp2.begin());
 				weight2 = (double)temp2.size() / temp.size();
 				if (weight2)
@@ -130,12 +131,13 @@ double calculated(vector<int> range, tattribute target){
 	
 	return infoAD;
 }
+// make decision tree about parent node with remained attributes in the range tuples
 void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent){
-	// calculate information gain about attributes which doesn't selected
 	int i;
 	double min = 100;
 	string min_attr;
 
+	// find max classified class label in the range.
 	int max = 0;
 	int max_lid;
 	for (i = 0; i < attr_Class.labels.size(); i++){
@@ -143,7 +145,8 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 		vector<int> class_tid_list = tid_lists[attr_Class.labels[i].lid];
 		vector<int> temp(range.size());
 
-		it = set_intersection(range.begin(), range.end(), class_tid_list.begin(), class_tid_list.end(), temp.begin());
+		it = set_intersection(range.begin(), range.end(), class_tid_list.begin(), 
+			class_tid_list.end(), temp.begin());
 		temp.resize(it - temp.begin());
 		if (max < temp.size()){
 			max = temp.size();
@@ -151,17 +154,19 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 		}
 	}
 
+	// when all range tuples are classified as one label or no attributes are remain, 
+	// label to max class label and return
 	if (max == range.size()||remained.size() == 0){
 		parent->flag = 1;
 		parent->attr = attr_Class.labels[max_lid].label;
-		cout << "**** labeled to " << parent->attr << endl << endl;
+		cout << "**** labeled to " << parent->attr << endl;
 		return;
 	}
 
 	parent->flag = 0;
 
+	// calculated gain and find max
 	for (i = 0; i < remained.size();i++){
-		// calculated gain and find max
 		tattribute target = attributes[findAttr(remained[i])];
 		double temp_gain = calculated(range, target);
 		if (min > temp_gain){
@@ -169,10 +174,13 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 			min_attr = target.attr;
 		}
 	}
+
 	parent->attr = min_attr;
 
 	remained.erase(remove(remained.begin(), remained.end(), min_attr), remained.end());
 	int aid = findAttr(min_attr);
+	
+	// partitioning by the attribute's labels
 	for (i = 0; i < attributes[aid].labels.size();i++){
 		
 		// intersection range & select the label;
@@ -181,7 +189,7 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 		vector<int> temp_range(range.size());
 		it = set_intersection(range.begin(), range.end(), selected_tid_list.begin(), selected_tid_list.end(), temp_range.begin());
 		temp_range.resize(it - temp_range.begin());
-
+		// when there are remain tuples, partitioning
 		if (temp_range.size()>0){
 			tNode temp_child;
 			temp_child.label = attributes[aid].labels[i].label;
@@ -189,7 +197,9 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 
 			cout << endl << attributes[aid].attr << "(" << temp_child.label << ") pruning..." << endl;
 			makeDecisionTree(temp_range, remained, &parent->list[parent->list.size()-1]);
-		}else{
+		}
+		// when there is no remain tuple, just labeled to max classified class label
+		else{
 			tNode temp_child;
 			temp_child.label = attributes[aid].labels[i].label;
 			temp_child.flag = 1;
@@ -197,18 +207,18 @@ void makeDecisionTree(vector<int> range, vector<string> remained, tNode *parent)
 			parent->list.push_back(temp_child);
 
 			cout << endl << attributes[aid].attr << "(" << temp_child.label << ") doesn't have range..." << endl;
-			cout << "**** labeled to " << temp_child.attr << endl << endl;
+			cout << "**** labeled to " << temp_child.attr << endl;
 		}
 	}
 }
-
+// find proper class label by decision tree
 string Labeling(vector<string> tuple){
 	tNode *point = &root;
 	while(!point->flag){
 		int i;
 		for(i=0;i<point->list.size();i++){
 			int aid = findAttr(point->attr);
-			cout<<point->attr << " : " << point->list[i].label << " " << tuple[aid] << endl;
+			// cout<<point->attr << " : " << point->list[i].label << " " << tuple[aid] << endl;
 			if(point->list[i].label == tuple[aid]){
 				point = &point->list[i];
 				break;
@@ -252,28 +262,29 @@ int main(int argc, char* argv[]){
 				int i;
 
 				for (i = 0; token != NULL; i++){
-					string temp = token;
 					
-					if (temp.substr(0, 6) == "Class:"){
-						token = strtok(token, "\n");
-						temp = token;
-						Class = temp.substr(6, temp.size());
-						tattribute tattr;
-						tattr.attr = Class;
-						attributes.push_back(tattr);
+					char * ptoken = token;
+					string temp = ptoken;
+
+					token = strtok(NULL, "\t");
+					if (token == NULL){
+						ptoken = strtok(ptoken, "\n");
+						temp = ptoken;
+						Class = temp;
 					}
 					else{
-						tattribute tattr;
-						tattr.attr = temp;
-						attributes.push_back(tattr);
 						remained.push_back(temp);
 					}
-					token = strtok(NULL, "\t");
+
+					tattribute tattr;
+					tattr.attr = temp;
+					attributes.push_back(tattr);
+						
 				}
-				printAttributes();
+//				printAttributes();
 			}
 			else{
-				// parsing tuple
+				// parsing tuples to tid_lists
 				token = strtok(str, "\t");
 				int i;
 
